@@ -68,6 +68,8 @@ htmlcov/
 .pytest_cache/
 backend/coverage.xml
 frontend/coverage/
+backend/data/knowledge/
+backend/data/exports/
 
 # SonarQube local
 .scannerwork/

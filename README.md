@@ -7,6 +7,18 @@ Sistema fullstack basado en Machine Learning para estimar automáticamente punto
 
 ## 🎯 Características Principales
 
+- **Agente multiagente local con Meta Llama en Jan 0.8.6**:
+  - Estimador ML, analista RAG, especialista de costos y revisor.
+  - API OpenAI-compatible de Jan; los datos permanecen en el equipo.
+  - Servidor MCP para conversar y ejecutar acciones desde el frontend de Jan.
+- **RAG del template T-Shirt**: indexa todas las pestañas del Excel y conserva
+  referencias de hoja/fila en las respuestas.
+- **Roles editables**: altas y modificaciones de colaboradores y costo por hora.
+- **Cuestionario y dashboard automáticos**: selecciona opciones del cuestionario,
+  estima épicas y replica la estructura de la pestaña `Resultado`.
+- **Exportación completa**: llena una copia del template conservando hojas,
+  formato, fórmulas e imágenes.
+
 - **Estimación Multi-objetivo**: Calcula 4 métricas simultáneamente:
   - Puntos de Historia (Story Points)
   - Duración estimada (días)
@@ -70,6 +82,13 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 El backend estará disponible en `http://localhost:8000`
+
+### 2.1 Configurar Jan y Meta Llama
+
+Instala Jan 0.8.6, descarga un modelo Meta Llama Instruct y activa el servidor
+local en el puerto `1337`. Copia `.env.example` a `.env` y ajusta `JAN_MODEL`
+al identificador que muestra Jan. Consulta [`jan/README.md`](jan/README.md) para
+habilitar también las herramientas MCP dentro del chat de Jan.
 
 ### 3. Configurar Frontend
 
@@ -138,10 +157,11 @@ El frontend estará disponible en `http://localhost:3000`
 ### Opción 1: Interfaz Web
 
 1. Abrir http://localhost:3000
-2. Hacer clic en "Seleccionar archivo Excel"
-3. Cargar archivo con historias de usuario
-4. Esperar resultados
-5. Ver tabla de estimaciones con comparación de modelos
+2. Cargar el template T-Shirt o usar el incluido.
+3. Editar tarifas en **Roles y costos**.
+4. Pulsar **Ejecutar multiagente**.
+5. Revisar dashboard y respuestas del cuestionario.
+6. Exportar el Excel completo o conversar desde Jan.
 
 ### Opción 2: API REST
 

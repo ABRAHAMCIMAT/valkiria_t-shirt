@@ -39,7 +39,7 @@ export default function ExcelUpload({ onUpload, loading }) {
 
   return (
     <div className="upload-card">
-      <h2>Subir Historias de Usuario para Estimación</h2>
+      <h2>Cargar template T-Shirt</h2>
       
       <div 
         className="drop-zone"
@@ -49,7 +49,7 @@ export default function ExcelUpload({ onUpload, loading }) {
         onClick={() => fileInputRef.current?.click()}
       >
         <div className="drop-icon">📁</div>
-        <h3>Arrastra y suelta tu archivo Excel aquí</h3>
+        <h3>Arrastra el template Excel aquí</h3>
         <p>o haz clic para explorar</p>
         <p className="formats">Formatos soportados: .xlsx, .xls</p>
       </div>
@@ -65,18 +65,11 @@ export default function ExcelUpload({ onUpload, loading }) {
       {loading && (
         <div className="loading">
           <div className="spinner"></div>
-          <p>Procesando historias...</p>
+          <p>Indexando hojas y construyendo el RAG…</p>
         </div>
       )}
 
-      <div className="requirements">
-        <h4>Columnas Requeridas en Excel:</h4>
-        <ul>
-          <li><strong>Titulo</strong> - Título de la historia</li>
-          <li><strong>Historia de Usuario</strong> - Descripción de la historia</li>
-          <li><strong>Criterios de Aceptación</strong> - Criterios de aceptación</li>
-        </ul>
-      </div>
+      <div className="requirements"><strong>Pestañas reconocidas:</strong> Roles, Cuestionario, Epic Backlog y Resultado.</div>
     </div>
   );
 }

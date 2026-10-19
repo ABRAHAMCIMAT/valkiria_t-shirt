@@ -13,6 +13,7 @@ import os
 import sys
 import tempfile
 import traceback
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -20,11 +21,14 @@ import numpy as np
 import pandas as pd
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from models.epic_estimation_models import EstimationModels
+from services.multi_agent import MultiAgentEstimator
+from services.workbook_service import WorkbookKnowledgeBase
 from utils.data_preprocessing import JiraDataPreprocessor, process_user_excel
 
 # ============================================================================
@@ -66,6 +70,21 @@ class ModelStatsResponse(BaseModel):
     model_metrics: Optional[Dict[str, Dict[str, float]]] = None  # R² and other metrics
 
 
+class ChatRequest(BaseModel):
+    message: str
+
+
+class RoleRequest(BaseModel):
+    name: str
+    area: str = ""
+    required: bool = True
+    collaborators: float = 1
+    cost_hourly: float = 0
+    source_cost: float = 0
+    source_basis: str = "hora"
+    source_row: int = 0
+
+
 # ============================================================================
 # FastAPI Application
 # ============================================================================
@@ -94,6 +113,12 @@ training_in_progress = False
 MODEL_DIR = Path(__file__).parent.parent / "trained_models"
 MODEL_DIR.mkdir(exist_ok=True)
 MODEL_FILE = MODEL_DIR / "models.pkl"
+DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR.mkdir(exist_ok=True)
+EXPORT_DIR = DATA_DIR / "exports"
+EXPORT_DIR.mkdir(exist_ok=True)
+knowledge_base = WorkbookKnowledgeBase(DATA_DIR / "knowledge")
+latest_analysis: Optional[Dict] = None
 
 
 # ============================================================================
@@ -118,7 +143,20 @@ async def startup_event():
             print("  Models will need to be trained before predictions can be made")
     else:
         print("[INFO] No trained models found")
-        print("  Call POST /train endpoint with JIRA CSV to train models")
+        bundled_training = Path(__file__).parent.parent / "training_data_improved.csv"
+        if bundled_training.exists():
+            try:
+                estimation_models = _train_bundled_models(bundled_training)
+                print(f"[OK] Modelos base entrenados con {bundled_training.name}")
+            except Exception as exc:
+                print(f"[ERROR] No fue posible entrenar los modelos base: {exc}")
+        else:
+            print("  Call POST /train endpoint with JIRA CSV to train models")
+
+    bundled_template = DATA_DIR / "T-Shirt_template.xlsx"
+    if not knowledge_base.load() and bundled_template.exists():
+        knowledge_base.ingest(bundled_template)
+        print(f"[OK] Base de conocimiento creada desde {bundled_template.name}")
 
 
 @app.on_event("shutdown")
@@ -137,6 +175,7 @@ async def health_check():
     return {
         "status": "healthy",
         "models_loaded": estimation_models is not None and bool(estimation_models.rf_models),
+        "knowledge_loaded": bool(knowledge_base.chunks),
         "timestamp": pd.Timestamp.now().isoformat()
     }
 
@@ -579,6 +618,142 @@ def create_feature_vector(request: StoryEstimationRequest) -> np.ndarray:
         features[0, 9] = 0.5
 
     return features
+
+
+def _train_bundled_models(csv_path: Path) -> EstimationModels:
+    """Entrena automáticamente el modelo del repositorio en un primer arranque."""
+    df = pd.read_csv(csv_path, encoding="utf-8").dropna(subset=["Custom field (Story Points)"])
+    features = []
+    for _, row in df.iterrows():
+        criteria = str(row.get("Criterios de Aceptación", ""))
+        features.append(create_feature_vector(StoryEstimationRequest(
+            title=str(row.get("Titulo", "")),
+            description=str(row.get("Historia de Usuario", "")),
+            acceptance_criteria=[line.strip() for line in criteria.splitlines() if line.strip()],
+        ))[0])
+    targets = {
+        "point": df["Custom field (Story Points)"].to_numpy(dtype=np.float32),
+        "time": df["Duracion_Sprint"].to_numpy(dtype=np.float32),
+        "cost": df["Costo_por_dia"].to_numpy(dtype=np.float32),
+        "effort": df["Esfuerzo_por_Puntos_Historia"].to_numpy(dtype=np.float32),
+    }
+    models = EstimationModels(str(MODEL_DIR))
+    models.train(np.asarray(features, dtype=np.float32), targets)
+    models.features_columns = [f"linguistic_feature_{index}" for index in range(10)]
+    models.save(str(MODEL_FILE))
+    return models
+
+
+# ============================================================================
+# RAG, multiagente, roles, dashboard y exportación T-Shirt
+# ============================================================================
+
+async def _ml_predictor(epic: Dict[str, object]) -> Dict[str, object]:
+    criteria = str(epic.get("acceptance_criteria", ""))
+    response = await estimate_single_story(StoryEstimationRequest(
+        title=str(epic.get("name", "Épica")),
+        description=str(epic.get("description", "")),
+        acceptance_criteria=[line.strip() for line in criteria.splitlines() if line.strip()],
+    ))
+    return response.model_dump()
+
+
+def _agents() -> MultiAgentEstimator:
+    predictor = _ml_predictor if estimation_models and estimation_models.rf_models else None
+    return MultiAgentEstimator(knowledge_base, predictor)
+
+
+@app.post("/knowledge/upload")
+async def upload_knowledge(file: UploadFile = File(...)):
+    """Carga el template Excel y reconstruye el índice RAG y catálogo de roles."""
+    if not file.filename or not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="El archivo debe ser .xlsx")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp:
+        temp.write(await file.read())
+        temp_path = Path(temp.name)
+    try:
+        return {"status": "success", **knowledge_base.ingest(temp_path)}
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"No fue posible indexar el Excel: {exc}") from exc
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+@app.get("/knowledge/status")
+async def knowledge_status():
+    return {
+        "loaded": bool(knowledge_base.chunks or knowledge_base.load()),
+        "chunks": len(knowledge_base.chunks),
+        "template": knowledge_base.workbook_path.exists(),
+    }
+
+
+@app.get("/knowledge/search")
+async def search_knowledge(q: str, limit: int = 6):
+    return {"query": q, "results": knowledge_base.search(q, limit)}
+
+
+@app.get("/roles")
+async def list_roles():
+    return {"roles": knowledge_base.get_roles()}
+
+
+@app.post("/roles")
+async def create_role(role: RoleRequest):
+    roles = knowledge_base.get_roles()
+    if any(item["name"].casefold() == role.name.casefold() for item in roles):
+        raise HTTPException(status_code=409, detail="El rol ya existe")
+    roles.append(role.model_dump())
+    return {"roles": knowledge_base.save_roles(roles)}
+
+
+@app.put("/roles/{role_name}")
+async def update_role(role_name: str, role: RoleRequest):
+    roles = knowledge_base.get_roles()
+    index = next((i for i, item in enumerate(roles) if item["name"].casefold() == role_name.casefold()), None)
+    if index is None:
+        raise HTTPException(status_code=404, detail="Rol no encontrado")
+    updated = role.model_dump()
+    if not updated["source_row"]:
+        updated["source_row"] = roles[index].get("source_row", 0)
+    roles[index] = updated
+    return {"roles": knowledge_base.save_roles(roles)}
+
+
+@app.post("/agent/chat")
+async def agent_chat(request: ChatRequest):
+    if not request.message.strip():
+        raise HTTPException(status_code=400, detail="Escribe una pregunta")
+    return await _agents().chat(request.message)
+
+
+@app.post("/project/analyze")
+async def analyze_project():
+    global latest_analysis
+    if not knowledge_base.workbook_path.exists():
+        raise HTTPException(status_code=409, detail="Primero carga el template Excel")
+    latest_analysis = await _agents().analyze_project()
+    return latest_analysis
+
+
+@app.get("/dashboard")
+async def get_dashboard():
+    if latest_analysis is None:
+        raise HTTPException(status_code=404, detail="Ejecuta POST /project/analyze primero")
+    return latest_analysis
+
+
+@app.post("/export/excel")
+async def export_excel():
+    if latest_analysis is None:
+        raise HTTPException(status_code=409, detail="Ejecuta el análisis antes de exportar")
+    output = EXPORT_DIR / f"estimacion_completa_{uuid.uuid4().hex[:8]}.xlsx"
+    knowledge_base.export(output, latest_analysis)
+    return FileResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=output.name,
+    )
 
 
 # ============================================================================

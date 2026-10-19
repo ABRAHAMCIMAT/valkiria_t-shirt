@@ -6,7 +6,7 @@ describe('Header', () => {
     render(<Header />);
 
     expect(
-      screen.getByText(/Sistema de Estimación de Épicas/i)
+      screen.getByText(/Modelo de Predicción PM/i)
     ).toBeInTheDocument();
   });
 
@@ -14,7 +14,7 @@ describe('Header', () => {
     render(<Header />);
 
     expect(
-      screen.getByText(/puntos, duración, costo y esfuerzo/i)
+      screen.getByText(/ML Ensemble.*RAG Excel.*Meta Llama.*Jan/i)
     ).toBeInTheDocument();
   });
 });
