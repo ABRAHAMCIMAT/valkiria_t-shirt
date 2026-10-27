@@ -31,9 +31,9 @@ def test_llm_variables_take_precedence_over_jan(monkeypatch):
 
 
 def test_legacy_jan_variables_still_work(monkeypatch):
-    monkeypatch.setenv("JAN_API_URL", "http://127.0.0.1:1337/v1/")
+    monkeypatch.setenv("JAN_API_URL", "http://localhost:11434/v1/")
 
-    assert LLMClient().base_url == "http://127.0.0.1:1337/v1"
+    assert LLMClient().base_url == "http://localhost:11434/v1"
 
 
 def test_mcp_server_exposes_tools():
