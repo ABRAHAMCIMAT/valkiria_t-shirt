@@ -1,7 +1,7 @@
 {
   "name": "epic-estimation-frontend",
   "version": "1.0.0",
-  "description": "Epic Estimation Frontend - Jan-based UI with Excel upload",
+  "description": "Epic Estimation Frontend - Ollama + Meta Llama UI with Excel upload",
   "private": true,
   "scripts": {
     "dev": "next dev",

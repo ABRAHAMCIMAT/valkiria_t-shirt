@@ -14,7 +14,7 @@ describe('Header', () => {
     render(<Header />);
 
     expect(
-      screen.getByText(/ML Ensemble.*RAG Excel.*Meta Llama.*Jan/i)
+      screen.getByText(/ML Ensemble.*RAG Excel.*Meta Llama.*Ollama/i)
     ).toBeInTheDocument();
   });
 });

@@ -1,9 +1,9 @@
 {
   "mcpServers": {
     "estimacion-epicas": {
-      "command": "python",
+      "command": "/RUTA/AL/REPO/backend/venv/bin/python",
       "args": [
-        "C:/RUTA/PoC_Agente_Estimacion_Epicas/backend/mcp_server.py"
+        "/RUTA/AL/REPO/backend/mcp_server.py"
       ],
       "env": {
         "ESTIMATION_API_URL": "http://127.0.0.1:8000"

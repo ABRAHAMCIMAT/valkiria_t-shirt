@@ -13,9 +13,10 @@ services:
       - ./HU_260226.xlsx:/data/HU_260226.xlsx
     environment:
       - PYTHONUNBUFFERED=1
-      - JAN_API_URL=http://host.docker.internal:1337/v1
-      - JAN_MODEL=${JAN_MODEL:-llama-3.1-8b-instruct}
-      - JAN_API_KEY=${JAN_API_KEY:-jan-local}
+      - LLM_API_URL=${LLM_API_URL:-http://host.docker.internal:11434/v1}
+      - LLM_MODEL=${LLM_MODEL:-llama3.1:8b-instruct-q4_K_M}
+      - LLM_API_KEY=${LLM_API_KEY:-ollama}
+      - LLM_TIMEOUT=${LLM_TIMEOUT:-300}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

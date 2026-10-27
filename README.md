@@ -7,10 +7,10 @@ Sistema fullstack basado en Machine Learning para estimar automáticamente punto
 
 ## 🎯 Características Principales
 
-- **Agente multiagente local con Meta Llama en Jan 0.8.6**:
+- **Agente multiagente local con Meta Llama servido por Ollama**:
   - Estimador ML, analista RAG, especialista de costos y revisor.
-  - API OpenAI-compatible de Jan; los datos permanecen en el equipo.
-  - Servidor MCP para conversar y ejecutar acciones desde el frontend de Jan.
+  - API OpenAI-compatible de Ollama; los datos permanecen en el equipo.
+  - Servidor MCP para conversar y ejecutar acciones desde un cliente MCP como Jan.
 - **RAG del template T-Shirt**: indexa todas las pestañas del Excel y conserva
   referencias de hoja/fila en las respuestas.
 - **Roles editables**: altas y modificaciones de colaboradores y costo por hora.
@@ -83,12 +83,22 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 El backend estará disponible en `http://localhost:8000`
 
-### 2.1 Configurar Jan y Meta Llama
+### 2.1 Configurar Ollama y Meta Llama
 
-Instala Jan 0.8.6, descarga un modelo Meta Llama Instruct y activa el servidor
-local en el puerto `1337`. Copia `.env.example` a `.env` y ajusta `JAN_MODEL`
-al identificador que muestra Jan. Consulta [`jan/README.md`](jan/README.md) para
-habilitar también las herramientas MCP dentro del chat de Jan.
+Instala Ollama, descarga el modelo y deja el servidor activo en el puerto `11434`:
+
+```bash
+ollama pull llama3.1:8b-instruct-q4_K_M
+ollama serve
+```
+
+El backend lee las variables `LLM_API_URL`, `LLM_MODEL`, `LLM_API_KEY` y
+`LLM_TIMEOUT` (ver `.env.example`; por defecto apuntan a Ollama local). El
+backend no carga `.env` automáticamente: expórtalas en la terminal antes de
+iniciar uvicorn. Las variables `JAN_*` anteriores se siguen aceptando.
+
+Consulta [`jan/README.md`](jan/README.md) para usar las herramientas MCP desde
+el chat de Jan.
 
 ### 3. Configurar Frontend
 
@@ -161,7 +171,7 @@ El frontend estará disponible en `http://localhost:3000`
 3. Editar tarifas en **Roles y costos**.
 4. Pulsar **Ejecutar multiagente**.
 5. Revisar dashboard y respuestas del cuestionario.
-6. Exportar el Excel completo o conversar desde Jan.
+6. Exportar el Excel completo o conversar desde un cliente MCP (por ejemplo, Jan).
 
 ### Opción 2: API REST
 
