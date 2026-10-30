@@ -31,7 +31,9 @@ class LLMClient:
         prompt: str,
         temperature: float = 0.2,
         json_mode: bool = False,
+        schema: Optional[Dict[str, Any]] = None,
     ) -> str:
+        """schema restringe la respuesta a ese JSON Schema (structured outputs)."""
         payload: Dict[str, Any] = {
             "model": self.model,
             "messages": [
@@ -41,7 +43,12 @@ class LLMClient:
             "temperature": temperature,
             "stream": False,
         }
-        if json_mode:
+        if schema:
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "respuesta", "schema": schema},
+            }
+        elif json_mode:
             payload["response_format"] = {"type": "json_object"}
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(

@@ -146,7 +146,7 @@ async def startup_event():
         bundled_training = Path(__file__).parent.parent / "training_data_improved.csv"
         if bundled_training.exists():
             try:
-                estimation_models = _train_bundled_models(bundled_training)
+                estimation_models, _ = train_models_from_csv(bundled_training)
                 print(f"[OK] Modelos base entrenados con {bundled_training.name}")
             except Exception as exc:
                 print(f"[ERROR] No fue posible entrenar los modelos base: {exc}")
@@ -190,10 +190,12 @@ async def train_models(
     background_tasks: BackgroundTasks = None
 ):
     """
-    Train models from CSV file.
+    Train models from CSV file: the training CSV or a raw JIRA export
+    (detected by its 'Summary' column and converted automatically).
 
     Required CSV columns at minimum:
     - Custom field (Story Points) [target variable]
+    - Titulo, Historia de Usuario, Criterios de Aceptación [features]
     - Duracion_Sprint, Costo_por_dia, Esfuerzo_por_Puntos_Historia [optional]
     """
     global estimation_models, training_in_progress
@@ -227,84 +229,13 @@ async def train_models(
             # Train models
             print(f"Training models from {file.filename}...")
 
-            # Read CSV and prepare data
-            df = pd.read_csv(tmp_path, encoding='utf-8')
-            df.columns = df.columns.str.strip()
-
-            print(f"[INFO] Loaded {len(df)} rows with columns: {df.columns.tolist()}")
-
-            # Required columns: target plus the text columns feature
-            # extraction is based on
-            required_col = 'Custom field (Story Points)'
-            text_cols = ['Titulo', 'Historia de Usuario', 'Criterios de Aceptación']
-
-            if required_col not in df.columns:
-                raise ValueError(f"Missing required column: {required_col}")
-
-            missing_text_cols = [c for c in text_cols if c not in df.columns]
-            if missing_text_cols:
-                raise ValueError(f"Missing required columns for feature extraction: {missing_text_cols}")
-
-            # Drop rows with missing target
-            df = df.dropna(subset=[required_col])
-
-            if len(df) < 10:
-                raise ValueError(f"Not enough data: {len(df)} rows after cleaning")
-
-            # Build the same 10-feature linguistic vector used at prediction
-            # time, so the trained scaler/models match what /estimate/* sends
-            X_features = []
-            for _, row in df.iterrows():
-                criteria_raw = row.get('Criterios de Aceptación', '')
-                criteria_list = []
-                if pd.notna(criteria_raw) and isinstance(criteria_raw, str):
-                    criteria_list = [c.strip() for c in criteria_raw.split('\n') if c.strip()]
-
-                story_req = StoryEstimationRequest(
-                    title=str(row.get('Titulo', '')),
-                    description=str(row.get('Historia de Usuario', '')),
-                    acceptance_criteria=criteria_list or None
-                )
-                X_features.append(create_feature_vector(story_req)[0])
-
-            X = np.array(X_features, dtype=np.float32)
-
-            # Prepare targets: use the real sprint/cost/effort columns when
-            # available, falling back to synthetic values only if absent
-            y_points = df[required_col].values.astype(np.float32)
-
-            if 'Duracion_Sprint' in df.columns:
-                y_time = df['Duracion_Sprint'].fillna(df['Duracion_Sprint'].median()).values.astype(np.float32)
-            else:
-                y_time = y_points * np.random.uniform(0.8, 1.2, len(y_points))
-
-            if 'Costo_por_dia' in df.columns:
-                y_cost = df['Costo_por_dia'].fillna(df['Costo_por_dia'].median()).values.astype(np.float32)
-            else:
-                y_cost = y_points * np.random.uniform(200, 400, len(y_points))
-
-            if 'Esfuerzo_por_Puntos_Historia' in df.columns:
-                y_effort = df['Esfuerzo_por_Puntos_Historia'].fillna(df['Esfuerzo_por_Puntos_Historia'].median()).values.astype(np.float32)
-            else:
-                y_effort = y_points * np.random.uniform(4, 16, len(y_points))
-
-            y_dict = {
-                'point': y_points,
-                'time': y_time,
-                'cost': y_cost,
-                'effort': y_effort
-            }
-
-            # Create and train models
-            estimation_models = EstimationModels(str(MODEL_DIR))
-            estimation_models.train(X, y_dict)
-            estimation_models.save(str(MODEL_FILE))
+            estimation_models, samples = train_models_from_csv(Path(tmp_path))
 
             print("[OK] Models trained successfully")
 
             return {
                 "status": "success",
-                "message": f"Models trained on {len(df)} samples",
+                "message": f"Models trained on {samples} samples",
                 "models": list(estimation_models.rf_models.keys()),
                 "model_file": str(MODEL_FILE)
             }
@@ -620,28 +551,69 @@ def create_feature_vector(request: StoryEstimationRequest) -> np.ndarray:
     return features
 
 
-def _train_bundled_models(csv_path: Path) -> EstimationModels:
-    """Entrena automáticamente el modelo del repositorio en un primer arranque."""
-    df = pd.read_csv(csv_path, encoding="utf-8").dropna(subset=["Custom field (Story Points)"])
+def _training_data(csv_path: Path) -> tuple[np.ndarray, Dict[str, np.ndarray]]:
+    """Lee un CSV de entrenamiento o un export crudo de JIRA y arma X y los targets."""
+    df = pd.read_csv(csv_path, encoding="utf-8")
+    df.columns = df.columns.str.strip()
+    print(f"[INFO] Loaded {len(df)} rows with columns: {df.columns.tolist()}")
+
+    preprocessor = JiraDataPreprocessor()
+    if preprocessor.is_jira_export(df):
+        print("[INFO] JIRA export detected, converting to the training schema")
+        df = preprocessor.to_training_frame(df)
+
+    required_col = "Custom field (Story Points)"
+    text_cols = ["Titulo", "Historia de Usuario", "Criterios de Aceptación"]
+    if required_col not in df.columns:
+        raise ValueError(f"Missing required column: {required_col}")
+    missing_text_cols = [c for c in text_cols if c not in df.columns]
+    if missing_text_cols:
+        raise ValueError(f"Missing required columns for feature extraction: {missing_text_cols}")
+
+    df[required_col] = pd.to_numeric(df[required_col], errors="coerce")
+    df = df.dropna(subset=[required_col])
+    if len(df) < 10:
+        raise ValueError(f"Not enough data: {len(df)} rows after cleaning")
+
+    # Same 10-feature linguistic vector used at prediction time, so the
+    # trained scaler/models match what /estimate/* sends
     features = []
     for _, row in df.iterrows():
-        criteria = str(row.get("Criterios de Aceptación", ""))
+        criteria = row.get("Criterios de Aceptación", "")
+        criteria = criteria if isinstance(criteria, str) else ""
         features.append(create_feature_vector(StoryEstimationRequest(
             title=str(row.get("Titulo", "")),
             description=str(row.get("Historia de Usuario", "")),
-            acceptance_criteria=[line.strip() for line in criteria.splitlines() if line.strip()],
+            acceptance_criteria=[line.strip() for line in criteria.splitlines() if line.strip()] or None,
         ))[0])
+
+    # Use the real sprint/cost/effort columns when available, falling back to
+    # synthetic values only if absent
+    y_points = df[required_col].to_numpy(dtype=np.float32)
+
+    def target(column: str, low: float, high: float) -> np.ndarray:
+        if column in df.columns:
+            values = pd.to_numeric(df[column], errors="coerce")
+            return values.fillna(values.median()).to_numpy(dtype=np.float32)
+        return y_points * np.random.uniform(low, high, len(y_points))
+
     targets = {
-        "point": df["Custom field (Story Points)"].to_numpy(dtype=np.float32),
-        "time": df["Duracion_Sprint"].to_numpy(dtype=np.float32),
-        "cost": df["Costo_por_dia"].to_numpy(dtype=np.float32),
-        "effort": df["Esfuerzo_por_Puntos_Historia"].to_numpy(dtype=np.float32),
+        "point": y_points,
+        "time": target("Duracion_Sprint", 0.8, 1.2),
+        "cost": target("Costo_por_dia", 200, 400),
+        "effort": target("Esfuerzo_por_Puntos_Historia", 4, 16),
     }
+    return np.asarray(features, dtype=np.float32), targets
+
+
+def train_models_from_csv(csv_path: Path) -> tuple[EstimationModels, int]:
+    """Entrena y guarda los modelos; devuelve los modelos y el número de muestras."""
+    X, targets = _training_data(csv_path)
     models = EstimationModels(str(MODEL_DIR))
-    models.train(np.asarray(features, dtype=np.float32), targets)
+    models.train(X, targets)
     models.features_columns = [f"linguistic_feature_{index}" for index in range(10)]
     models.save(str(MODEL_FILE))
-    return models
+    return models, len(X)
 
 
 # ============================================================================
