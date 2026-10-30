@@ -31,16 +31,29 @@ find_free_port() {
   echo "$port"
 }
 
+# Solo procesos que corren dentro de este repositorio: el mismo puerto puede
+# estar ocupado por Docker (docker compose) u otro proyecto
+owned_by_repo() {
+  local cwd
+  cwd=$(lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+  case "$cwd" in
+    "$ROOT_DIR" | "$ROOT_DIR"/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 kill_port() {
   local port=$1
   local pids
   pids=$(lsof -ti tcp:"$port" -sTCP:LISTEN 2>/dev/null || true)
-  if [ -n "$pids" ]; then
-    for pid in $pids; do
+  for pid in $pids; do
+    if owned_by_repo "$pid"; then
       echo "  -> deteniendo PID $pid en puerto $port ($(ps -p "$pid" -o comm= 2>/dev/null))"
-    done
-    kill $pids 2>/dev/null || true
-  fi
+      kill "$pid" 2>/dev/null || true
+    else
+      echo "  -> se omite PID $pid en puerto $port ($(ps -p "$pid" -o comm= 2>/dev/null)): no fue lanzado desde este repositorio"
+    fi
+  done
 }
 
 stop_services() {
@@ -78,8 +91,9 @@ if [ ! -f trained_models/models.pkl ]; then
   if [ -f "$ROOT_DIR/Jira (3).csv" ]; then
     echo "[backend] No hay modelos entrenados. Entrenando con 'Jira (3).csv'..."
     ./venv/bin/python -c "
-from models.epic_estimation_models import create_and_train_models
-create_and_train_models('../Jira (3).csv', 'trained_models')
+from pathlib import Path
+from app.main import train_models_from_csv
+train_models_from_csv(Path('../Jira (3).csv'))
 "
   else
     echo "[backend] AVISO: no hay modelos entrenados ni 'Jira (3).csv' en la raíz para entrenarlos."

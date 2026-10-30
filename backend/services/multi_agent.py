@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from services.llm_client import LLMClient
 from services.workbook_service import WorkbookKnowledgeBase
 
 SIZE_ORDER = ["XS", "S", "M", "L", "XL"]
+OPTION_ORDER = ["NA", *SIZE_ORDER]
+# Cabe con holgura en el contexto por defecto de Ollama (4096 tokens) junto con una pregunta
+BACKLOG_CHARS = 8000
+QUESTION_SYSTEM = (
+    "Eres analista de arquitectura y costos. Lee el backlog y elige la talla de la opción que mejor "
+    "corresponde a lo que el backlog describe. No elijas una talla mayor sin evidencia en el backlog: "
+    "cuenta plataformas, integraciones y componentes mencionados. Si el backlog conecta varias "
+    "plataformas, no elijas una opción que diga que no hay integración. Responde solo JSON."
+)
 
 
 class MultiAgentEstimator:
@@ -51,7 +61,8 @@ class MultiAgentEstimator:
             ml_result = await self._predict_epic(epic)
             epic_results.append({**epic, **ml_result})
 
-        questionnaire_results = await self._analyze_questionnaire(questionnaire, epics)
+        max_size = max((epic["size"] for epic in epic_results), key=SIZE_ORDER.index, default="XS")
+        questionnaire_results = await self._analyze_questionnaire(questionnaire, epics, max_size)
         total_hours = sum(float(epic["effort_hours"]) for epic in epic_results)
         active_roles = [role for role in roles if role.get("required", True)]
         hourly_team_cost = sum(
@@ -63,7 +74,6 @@ class MultiAgentEstimator:
         questionnaire_cost = sum(float(item.get("cost", 0)) for item in questionnaire_results)
         total_cost = max(role_cost, epic_ml_cost) + questionnaire_cost
         total_weeks = sum(float(epic["weeks"]) for epic in epic_results)
-        max_size = max((epic["size"] for epic in epic_results), key=SIZE_ORDER.index, default="XS")
         mvp_count = len({epic.get("mvp", "MVP1") for epic in epics}) or 1
 
         summary = {
@@ -124,27 +134,50 @@ class MultiAgentEstimator:
             "estimation_source": "heurística_respaldo",
         }
 
-    async def _analyze_questionnaire(self, questions, epics) -> List[Dict[str, Any]]:
-        project_text = "\n".join(
-            f"{epic['name']}: {epic['description']} {epic['acceptance_criteria']}" for epic in epics
-        )[:24000]
-        if await self.llm.available() and questions:
-            prompt = {
-                "project": project_text,
-                "questions": questions,
-                "instruction": "Elige exactamente una opción por pregunta. Devuelve JSON: answers=[{number,row,answer,reason}]. row debe ser el row de la opción.",
-            }
-            try:
-                raw = await self.llm.chat(
-                    "Eres analista de arquitectura y costos. Usa solo las opciones dadas y responde JSON válido.",
-                    json.dumps(prompt, ensure_ascii=False),
-                    json_mode=True,
-                )
-                selected = {str(item["number"]): item for item in self.llm.parse_json(raw).get("answers", [])}
-                return [self._question_result(q, selected.get(str(q["number"]))) for q in questions]
-            except Exception:
-                pass
-        return [self._question_result(question, None) for question in questions]
+    async def _analyze_questionnaire(self, questions, epics, complexity: str = "M") -> List[Dict[str, Any]]:
+        if not questions or not await self.llm.available():
+            return [self._question_result(question, None) for question in questions]
+        platforms = self._platforms(epics)
+        backlog = "\n".join(f"- {epic['name']}: {epic['description']}" for epic in epics)[:BACKLOG_CHARS]
+        context = (
+            f"Backlog del proyecto ({len(epics)} épicas, talla estimada por el modelo ML: {complexity}, "
+            f"plataformas involucradas ({len(platforms)}): {', '.join(platforms) or 'no identificadas'}):\n{backlog}"
+        )
+        # Una pregunta por llamada: con todas juntas el modelo elegía la primera opción de cada una
+        return [self._question_result(q, await self._answer_question(context, q)) for q in questions]
+
+    async def _answer_question(self, context: str, question: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        # El template lista XL primero y el modelo tiende a quedarse con la primera opción,
+        # así que se presentan de menor a mayor
+        options = sorted(
+            question.get("options", []),
+            key=lambda option: OPTION_ORDER.index(option["size"]) if option.get("size") in OPTION_ORDER else len(OPTION_ORDER),
+        )
+        sizes = list(dict.fromkeys(option.get("size", "NA") for option in options))
+        if not sizes:
+            return None
+        listed = "\n".join(f"{option.get('size', 'NA')}: {option.get('answer', '')}" for option in options)
+        prompt = (
+            f"{context}\n\nTema: {question.get('topic', '')}\nPregunta: {question.get('question', '')}\n"
+            f'Opciones:\n{listed}\n\nDevuelve {{"size": talla, "reason": "evidencia del backlog en una frase"}}.'
+        )
+        schema = {
+            "type": "object",
+            "properties": {"size": {"type": "string", "enum": sizes}, "reason": {"type": "string"}},
+            "required": ["size", "reason"],
+        }
+        try:
+            answer = self.llm.parse_json(await self.llm.chat(QUESTION_SYSTEM, prompt, temperature=0, schema=schema))
+        except Exception:
+            return None
+        option = next((option for option in options if option.get("size") == answer.get("size")), None)
+        return {"row": option["row"], "reason": answer.get("reason", "")} if option else None
+
+    @staticmethod
+    def _platforms(epics: List[Dict[str, Any]]) -> List[str]:
+        """Plataformas tomadas del prefijo de las épicas ("EBS-Generación de póliza" -> EBS)."""
+        prefixes = (re.match(r"\s*([^\s:-]{2,15})\s*-", str(epic.get("name", ""))) for epic in epics)
+        return sorted({match.group(1) for match in prefixes if match})
 
     def _question_result(self, question, selected) -> Dict[str, Any]:
         options = question.get("options", [])

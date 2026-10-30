@@ -113,13 +113,15 @@ class JiraDataPreprocessor:
         """
         Extract start and end dates from Sprint string.
 
-        Example: "Sprint 1, 01-ene a 31-ene" -> ("2025-01-01", "2025-01-31")
+        Examples:
+            "Sprint 1, 01-ene a 31-ene" -> ("2025-01-01", "2025-01-31")
+            "Sprint 26 | Q2 01 Nov a 22 Nov" -> ("2025-11-01", "2025-11-22")  (JIRA export)
         """
         if pd.isna(sprint_str):
             return None, None
 
-        # Match date patterns like "01-ene a 31-ene"
-        pattern = r'(\d{2})-([a-záéíóú]+)\s+a\s+(\d{2})-([a-záéíóú]+)'
+        # Match date patterns like "01-ene a 31-ene" or "01 Nov a 22 Nov"
+        pattern = r'(\d{1,2})[-\s]([a-záéíóú]+)\s+a\s+(\d{1,2})[-\s]([a-záéíóú]+)'
         match = re.search(pattern, str(sprint_str), re.IGNORECASE)
 
         if not match:
@@ -133,8 +135,8 @@ class JiraDataPreprocessor:
             'sep': '09', 'oct': '10', 'nov': '11', 'dic': '12'
         }
 
-        month_start_num = month_map.get(month_start.lower(), '01')
-        month_end_num = month_map.get(month_end.lower(), '12')
+        month_start_num = month_map.get(month_start.lower()[:3], '01')
+        month_end_num = month_map.get(month_end.lower()[:3], '12')
 
         # Assume current year (2025 based on notebook)
         year = '2025'
@@ -158,7 +160,8 @@ class JiraDataPreprocessor:
                 return np.nan
             try:
                 delta = pd.to_datetime(end) - pd.to_datetime(start)
-                return delta.days
+                # Sprints that cross the year ("15 Dic a 05 Ene") share the assumed year
+                return delta.days if delta.days >= 0 else delta.days + 365
             except Exception:
                 return np.nan
 
@@ -303,6 +306,46 @@ class JiraDataPreprocessor:
         print("="*60)
 
         return df, metadata
+
+    @staticmethod
+    def is_jira_export(df: pd.DataFrame) -> bool:
+        """A raw JIRA export has 'Summary' instead of the training 'Titulo' column."""
+        return 'Summary' in df.columns and 'Titulo' not in df.columns
+
+    def to_training_frame(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert a raw JIRA export into the training schema used by POST /train:
+        Titulo, Historia de Usuario, Criterios de Aceptación and the four targets.
+        """
+        df = df.copy()
+        df.columns = df.columns.str.strip()
+        df['Custom field (Story Points)'] = pd.to_numeric(df['Custom field (Story Points)'], errors='coerce')
+        df = df.dropna(subset=['Custom field (Story Points)'])
+
+        if 'Sprint' not in df.columns:
+            df['Sprint'] = np.nan
+        df = self.create_time_features(df)
+        median_days = df['Duracion_Sprint'].median()
+        # Two-week sprints when the export has no parseable sprint dates
+        df['Duracion_Sprint'] = df['Duracion_Sprint'].fillna(14 if pd.isna(median_days) else median_days)
+
+        if 'Assignee' not in df.columns:
+            df['Assignee'] = np.nan
+        df = self.create_cost_features(df)
+        df = self.create_effort_features(df)
+        df = self.fix_outliers(df)
+
+        criteria = df.get('Custom field (Criterios de aceptación)', pd.Series('', index=df.index))
+        description = df.get('Description', pd.Series('', index=df.index))
+        return pd.DataFrame({
+            'Titulo': df['Summary'].fillna(''),
+            'Historia de Usuario': description.fillna(''),
+            'Criterios de Aceptación': criteria.fillna(''),
+            'Custom field (Story Points)': df['Custom field (Story Points)'],
+            'Duracion_Sprint': df['Duracion_Sprint'],
+            'Costo_por_dia': df['Costo_por_dia'],
+            'Esfuerzo_por_Puntos_Historia': df['Esfuerzo_por_Puntos_Historia'],
+        }).reset_index(drop=True)
 
 
 def process_user_excel(excel_path: str, preprocessor: JiraDataPreprocessor = None) -> pd.DataFrame:

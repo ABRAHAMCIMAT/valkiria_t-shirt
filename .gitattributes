@@ -1,0 +1,10 @@
+# Normaliza finales de línea sin depender de core.autocrlf de cada equipo
+* text=auto
+*.sh text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+Dockerfile text eol=lf
+# El export de JIRA trae finales mezclados dentro de campos; se conserva tal cual
+Jira*.csv -text
+*.xlsx binary
+*.pkl binary
