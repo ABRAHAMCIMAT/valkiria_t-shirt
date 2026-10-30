@@ -1,7 +1,7 @@
 # Quick Start Guide - Epic Estimation System
 
 ## Prerequisites
-- Python 3.10+ installed
+- Python 3.12 installed
 - Node.js 18+ installed  
 - The provided JIRA CSV file (Jira (3).csv) in the root directory
 

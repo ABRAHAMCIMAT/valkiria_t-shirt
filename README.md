@@ -44,7 +44,7 @@ Sistema fullstack basado en Machine Learning para estimar automáticamente punto
 ## 📋 Requisitos Previos
 
 ### Backend
-- Python 3.8+
+- Python 3.12
 - pip (gestor de paquetes Python)
 
 ### Frontend

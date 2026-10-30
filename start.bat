@@ -16,7 +16,7 @@ REM Check Python
 echo [1/6] Checking Python installation...
 py -3 --version >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: Python 3 not found. Please install Python 3.10+
+    echo ERROR: Python 3 not found. Please install Python 3.12
     pause
     exit /b 1
 )
