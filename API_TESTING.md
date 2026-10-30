@@ -5,7 +5,7 @@ This guide shows how to test the Epic Estimation API using curl or Python.
 ## Prerequisites
 
 - Backend running on `http://localhost:8000`
-- Python 3.10+ or curl installed
+- Python 3.12 or curl installed
 
 ## 1. Health Check
 

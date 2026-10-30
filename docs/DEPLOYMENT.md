@@ -11,7 +11,7 @@
 ## 🏠 Despliegue Local
 
 ### Requisitos Previos
-- Python 3.8+
+- Python 3.12
 - Node.js 16+
 - Git
 - pip y npm
@@ -358,7 +358,7 @@ heroku logs --tail
 
 Crear `backend/Dockerfile`:
 ```dockerfile
-FROM python:3.9-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 

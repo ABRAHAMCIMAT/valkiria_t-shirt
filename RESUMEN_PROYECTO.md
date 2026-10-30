@@ -4,7 +4,7 @@
 
 **Versión**: 1.0.0  
 **Última Actualización**: Agosto 2026  
-**Lenguajes**: Python 3.9+, JavaScript/React, SQL  
+**Lenguajes**: Python 3.12, JavaScript/React, SQL  
 **Licencia**: MIT
 
 ---

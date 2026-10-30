@@ -262,7 +262,7 @@ curl -F "file=@HU_260226.xlsx" http://localhost:8000/estimate/excel
 ## Technology Stack
 
 **Backend**:
-- Python 3.10+
+- Python 3.12
 - FastAPI 0.104
 - scikit-learn 1.3
 - pandas 2.1

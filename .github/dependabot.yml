@@ -16,11 +16,6 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    ignore:
-      # numpy 2.5+ requiere Python >= 3.12; CI y Dockerfile usan Python 3.11.
-      - dependency-name: "numpy"
-        versions:
-          - ">=2.5"
     commit-message:
       prefix: "deps(backend)"
 
