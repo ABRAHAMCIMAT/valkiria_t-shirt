@@ -1,20 +1,29 @@
-"""Cliente OpenAI-compatible para Jan 0.8.6 y modelos Meta Llama."""
+"""Cliente OpenAI-compatible para modelos Meta Llama servidos por Ollama.
+
+Funciona con cualquier servidor OpenAI-compatible (Ollama, Jan, llama.cpp).
+"""
 
 from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import httpx
 
 
-class JanClient:
+def _env(name: str, default: str) -> str:
+    """Lee LLM_<name>; acepta JAN_<name> por compatibilidad con configuraciones previas."""
+    value: Optional[str] = os.getenv(f"LLM_{name}") or os.getenv(f"JAN_{name}")
+    return value or default
+
+
+class LLMClient:
     def __init__(self):
-        self.base_url = os.getenv("JAN_API_URL", "http://host.docker.internal:1337/v1").rstrip("/")
-        self.model = os.getenv("JAN_MODEL", "llama-3.1-8b-instruct")
-        self.api_key = os.getenv("JAN_API_KEY", "jan-local")
-        self.timeout = float(os.getenv("JAN_TIMEOUT", "120"))
+        self.base_url = _env("API_URL", "http://127.0.0.1:11434/v1").rstrip("/")
+        self.model = _env("MODEL", "llama3.1:8b-instruct-q4_K_M")
+        self.api_key = _env("API_KEY", "ollama")
+        self.timeout = float(_env("TIMEOUT", "300"))
 
     async def chat(
         self,

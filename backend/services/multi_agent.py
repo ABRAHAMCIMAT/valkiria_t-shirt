@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from services.jan_client import JanClient
+from services.llm_client import LLMClient
 from services.workbook_service import WorkbookKnowledgeBase
 
 SIZE_ORDER = ["XS", "S", "M", "L", "XL"]
@@ -20,7 +20,7 @@ class MultiAgentEstimator:
         ml_predictor: Optional[Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]] = None,
     ):
         self.knowledge = knowledge
-        self.jan = JanClient()
+        self.llm = LLMClient()
         self.ml_predictor = ml_predictor
 
     async def chat(self, message: str) -> Dict[str, Any]:
@@ -28,18 +28,18 @@ class MultiAgentEstimator:
         context_text = "\n".join(
             f"[{item['sheet']} fila {item['row']}] {item['text']}" for item in context
         )
-        if not await self.jan.available():
+        if not await self.llm.available():
             return {
-                "answer": "Jan no está disponible. Inicia Jan 0.8.6, carga Meta Llama y activa su API en el puerto 1337.",
+                "answer": f"El modelo LLM no está disponible en {self.llm.base_url}. Inicia Ollama (`ollama serve`) y verifica que el modelo {self.llm.model} esté descargado.",
                 "sources": context,
-                "model": self.jan.model,
+                "model": self.llm.model,
                 "offline": True,
             }
-        answer = await self.jan.chat(
+        answer = await self.llm.chat(
             "Eres el agente coordinador de estimación de proyectos. Responde en español, cita hoja y fila, no inventes datos.",
             f"Pregunta: {message}\n\nContexto RAG:\n{context_text}",
         )
-        return {"answer": answer, "sources": context, "model": self.jan.model, "offline": False}
+        return {"answer": answer, "sources": context, "model": self.llm.model, "offline": False}
 
     async def analyze_project(self) -> Dict[str, Any]:
         epics = self.knowledge.get_epics()
@@ -128,19 +128,19 @@ class MultiAgentEstimator:
         project_text = "\n".join(
             f"{epic['name']}: {epic['description']} {epic['acceptance_criteria']}" for epic in epics
         )[:24000]
-        if await self.jan.available() and questions:
+        if await self.llm.available() and questions:
             prompt = {
                 "project": project_text,
                 "questions": questions,
                 "instruction": "Elige exactamente una opción por pregunta. Devuelve JSON: answers=[{number,row,answer,reason}]. row debe ser el row de la opción.",
             }
             try:
-                raw = await self.jan.chat(
+                raw = await self.llm.chat(
                     "Eres analista de arquitectura y costos. Usa solo las opciones dadas y responde JSON válido.",
                     json.dumps(prompt, ensure_ascii=False),
                     json_mode=True,
                 )
-                selected = {str(item["number"]): item for item in self.jan.parse_json(raw).get("answers", [])}
+                selected = {str(item["number"]): item for item in self.llm.parse_json(raw).get("answers", [])}
                 return [self._question_result(q, selected.get(str(q["number"]))) for q in questions]
             except Exception:
                 pass
@@ -175,9 +175,9 @@ class MultiAgentEstimator:
                 "Las respuestas automáticas del cuestionario deben validarse antes de presupuesto final.",
             ],
         }
-        if await self.jan.available():
+        if await self.llm.available():
             try:
-                text = await self.jan.chat(
+                text = await self.llm.chat(
                     "Eres revisor senior de estimaciones. Señala máximo 5 riesgos, sin cambiar cifras. Responde en español.",
                     json.dumps({"summary": result["summary"], "epics": result["epics"]}, ensure_ascii=False),
                 )

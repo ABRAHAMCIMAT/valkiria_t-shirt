@@ -18,7 +18,7 @@ export default function AgentChat({ api }) {
       setMessages((items) => [...items, { role: 'agent', text: 'No fue posible conectar con el backend.' }]);
     } finally { setBusy(false); }
   };
-  return <section className="panel chat-panel"><div className="panel-title"><div><span className="eyebrow">META LLAMA + RAG</span><h2>Agente conversacional</h2></div><span className="badge">Jan 0.8.6</span></div>
+  return <section className="panel chat-panel"><div className="panel-title"><div><span className="eyebrow">META LLAMA + RAG</span><h2>Agente conversacional</h2></div><span className="badge">Ollama</span></div>
     <div className="chat-history">{messages.length === 0 && <div className="chat-placeholder">Pregunta por costos, épicas, cuestionario, dependencias o riesgos.</div>}{messages.map((item, index) => <div className={`bubble ${item.role}`} key={index}><p>{item.text}</p>{item.sources?.length > 0 && <small>Fuentes: {item.sources.map((s) => `${s.sheet}:${s.row}`).join(', ')}</small>}</div>)}{busy && <div className="bubble agent">Analizando el contexto…</div>}</div>
     <form className="chat-form" onSubmit={send}><textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Escribe una pregunta…" /><button className="primary-btn" disabled={busy}>Enviar</button></form>
   </section>;

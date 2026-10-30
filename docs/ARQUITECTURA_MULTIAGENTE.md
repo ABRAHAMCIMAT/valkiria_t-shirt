@@ -1,8 +1,8 @@
 # Arquitectura multiagente
 
 ```text
-Jan 0.8.6 (Meta Llama) ── OpenAI API :1337 ─┐
-Jan Chat ── MCP stdio ──────────────────────┤
+Ollama (Meta Llama) ── OpenAI API :11434 ──┐
+Cliente MCP (Jan) ── MCP stdio ─────────────┤
                                              ▼
 Next.js :3000 ── REST ── FastAPI :8000 ── Orquestador
                                    ├── Estimador ML existente (RF + DT)
@@ -25,13 +25,13 @@ Next.js :3000 ── REST ── FastAPI :8000 ── Orquestador
    Si todavía no hay modelo entrenado, usa una heurística explícitamente marcada
    para que la aplicación continúe, sin presentar el resultado como ML.
 4. Los agentes de Llama eligen únicamente entre opciones reales del
-   `Cuestionario`; un error de Jan activa una selección conservadora marcada para
+   `Cuestionario`; un error del LLM activa una selección conservadora marcada para
    revisión humana.
 5. `POST /export/excel` rellena Roles, Cuestionario, Epic Backlog, Resultado,
    Arquitectura y Proceso To-Be sobre una copia del archivo original.
 
 ## Privacidad y operación
 
-El RAG no envía el libro a servicios cloud. Jan y el modelo Llama se ejecutan
+El RAG no envía el libro a servicios cloud. Ollama y el modelo Llama se ejecutan
 localmente. Para producción se recomienda autenticación en FastAPI, cifrado del
 directorio `backend/data`, CORS restringido y trazabilidad por usuario.

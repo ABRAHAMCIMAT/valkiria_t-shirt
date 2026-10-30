@@ -1,14 +1,14 @@
-"""Servidor MCP para usar la solución directamente desde Jan 0.8.6."""
+"""Servidor MCP (stdio) para usar la solución desde un cliente MCP como Jan."""
 
 import os
 from pathlib import Path
 from typing import Any, Dict
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 API_URL = os.getenv("ESTIMATION_API_URL", "http://127.0.0.1:8000").rstrip("/")
-mcp = FastMCP("estimacion-epicas")
+mcp = MCPServer("estimacion-epicas")
 
 
 def request(method: str, path: str, **kwargs) -> Any:
