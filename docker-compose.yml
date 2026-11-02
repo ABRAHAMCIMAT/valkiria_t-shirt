@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build:
@@ -8,9 +6,10 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app/backend
-      - ./Jira\ \(3\).csv:/data/Jira\ \(3\).csv
-      - ./HU_260226.xlsx:/data/HU_260226.xlsx
+      # Código montado sobre /app (WORKDIR de la imagen) para que --reload vea los cambios.
+      - ./backend:/app
+      # El venv local trae binarios del host; el contenedor usa sus propias dependencias.
+      - /app/venv
     environment:
       - PYTHONUNBUFFERED=1
       - LLM_API_URL=${LLM_API_URL:-http://host.docker.internal:11434/v1}
@@ -30,8 +29,10 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./frontend:/app/frontend
-      - /app/frontend/node_modules
+      - ./frontend:/app
+      # node_modules y .next del contenedor (los del host tienen binarios de macOS).
+      - /app/node_modules
+      - /app/.next
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
     command: npm run dev

@@ -2,10 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+# All dependencies ship prebuilt wheels for Python 3.12, so no compiler is needed.
 
 # Copy requirements
 COPY requirements.txt .
@@ -15,6 +12,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application
 COPY . .
+
+# Run as an unprivileged user that owns /app (models and exports are written there)
+RUN useradd --create-home --uid 1000 appuser && chown -R appuser /app
+USER appuser
 
 # Expose port
 EXPOSE 8000

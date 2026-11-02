@@ -1,0 +1,16 @@
+# Entornos y cachés locales: la imagen instala sus propias dependencias.
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+tests/
+.env
+
+# Artefactos generados en tiempo de ejecución: el contenedor los crea al iniciar.
+trained_models/
+data/knowledge/
+data/exports/

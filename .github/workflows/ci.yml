@@ -53,7 +53,7 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
@@ -71,3 +71,25 @@ jobs:
         with:
           name: frontend-coverage
           path: frontend/coverage
+
+  docker:
+    name: Docker (build + smoke test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Construir imagen backend
+        run: docker build -t epic-backend:ci backend
+
+      - name: Construir imagen frontend
+        run: docker build -t epic-frontend:ci frontend
+
+      - name: Smoke test backend
+        run: |
+          docker run -d --name backend -p 8000:8000 epic-backend:ci
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8000/health && exit 0
+            sleep 2
+          done
+          docker logs backend
+          exit 1

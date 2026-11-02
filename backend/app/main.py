@@ -14,6 +14,7 @@ import sys
 import tempfile
 import traceback
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -89,10 +90,19 @@ class RoleRequest(BaseModel):
 # FastAPI Application
 # ============================================================================
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Run startup before serving requests and shutdown when the server stops."""
+    startup_event()
+    yield
+    shutdown_event()
+
+
 app = FastAPI(
     title="Epic Estimation API",
     description="ML-based API for estimating story points, time, cost, and effort",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Enable CORS for frontend communication
@@ -125,8 +135,7 @@ latest_analysis: Optional[Dict] = None
 # Startup and Shutdown Events
 # ============================================================================
 
-@app.on_event("startup")
-async def startup_event():
+def startup_event():
     """Initialize models on startup."""
     global estimation_models
 
@@ -159,8 +168,7 @@ async def startup_event():
         print(f"[OK] Base de conocimiento creada desde {bundled_template.name}")
 
 
-@app.on_event("shutdown")
-async def shutdown_event():
+def shutdown_event():
     """Cleanup on shutdown."""
     print("Shutting down Epic Estimation API...")
 
