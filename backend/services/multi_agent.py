@@ -16,8 +16,7 @@ BACKLOG_CHARS = 8000
 QUESTION_SYSTEM = (
     "Eres analista de arquitectura y costos. Lee el backlog y elige la talla de la opción que mejor "
     "corresponde a lo que el backlog describe. No elijas una talla mayor sin evidencia en el backlog: "
-    "cuenta plataformas, integraciones y componentes mencionados. Si el backlog conecta varias "
-    "plataformas, no elijas una opción que diga que no hay integración. Responde solo JSON."
+    "cuenta plataformas, integraciones y componentes mencionados. Responde solo JSON."
 )
 
 
@@ -138,6 +137,7 @@ class MultiAgentEstimator:
         if not questions or not await self.llm.available():
             return [self._question_result(question, None) for question in questions]
         platforms = self._platforms(epics)
+        questions = [self._without_contradicted_options(question, len(platforms)) for question in questions]
         backlog = "\n".join(f"- {epic['name']}: {epic['description']}" for epic in epics)[:BACKLOG_CHARS]
         context = (
             f"Backlog del proyecto ({len(epics)} épicas, talla estimada por el modelo ML: {complexity}, "
@@ -172,6 +172,34 @@ class MultiAgentEstimator:
             return None
         option = next((option for option in options if option.get("size") == answer.get("size")), None)
         return {"row": option["row"], "reason": answer.get("reason", "")} if option else None
+
+    @classmethod
+    def _without_contradicted_options(cls, question: Dict[str, Any], platforms: int) -> Dict[str, Any]:
+        """Quita las opciones cuyo rango de plataformas no incluye las del backlog; el modelo no las cuenta bien."""
+        options = question.get("options", [])
+        if not platforms:
+            return question
+        kept = [option for option in options if cls._fits_platforms(str(option.get("answer", "")), platforms)]
+        # Sin opciones que encajen no hay nada que restringir: decide el modelo
+        return {**question, "options": kept} if any(option.get("size") != "NA" for option in kept) else question
+
+    @staticmethod
+    def _fits_platforms(answer: str, platforms: int) -> bool:
+        """True si la opción no indica rango de plataformas o si este incluye a platforms."""
+        text = answer.casefold()
+        if "sin integración" in text or "independiente" in text:
+            return platforms <= 1
+        if match := re.search(r"m[aá]s de\s*(\d+)\s+plataformas", text) or re.search(r"plataformas\s*>\s*(\d+)", text):
+            return platforms > int(match.group(1))
+        if match := re.search(r"(\d+) o m[aá]s plataformas", text):
+            return platforms >= int(match.group(1))
+        if match := re.search(r"(\d+)\s*(?:a|o|-)\s*(\d+)\s*(?:plataformas|sat[eé]lites)", text) or re.search(
+            r"plataformas\s+(\d+)\s*a\s*(\d+)", text
+        ):
+            return int(match.group(1)) <= platforms <= int(match.group(2))
+        if match := re.search(r"(\d+) plataformas?\b", text) or re.search(r"plataformas\s*=\s*(\d+)", text):
+            return platforms == int(match.group(1))
+        return True
 
     @staticmethod
     def _platforms(epics: List[Dict[str, Any]]) -> List[str]:

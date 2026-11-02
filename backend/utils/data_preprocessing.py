@@ -312,6 +312,19 @@ class JiraDataPreprocessor:
         """A raw JIRA export has 'Summary' instead of the training 'Titulo' column."""
         return 'Summary' in df.columns and 'Titulo' not in df.columns
 
+    @staticmethod
+    def _effort_hours(df: pd.DataFrame) -> pd.Series:
+        """
+        Effort in hours: JIRA's 'Original estimate' (seconds) when present; other
+        stories use their points times the median hours per point of those that have it.
+        """
+        points = df['Custom field (Story Points)']
+        estimate = df.get('Original estimate', pd.Series(np.nan, index=df.index))
+        hours = pd.to_numeric(estimate, errors='coerce').where(lambda seconds: seconds > 0) / 3600
+        hours_per_point = (hours / points.where(points > 0)).median()
+        # One working day per point when the export has no estimates at all
+        return hours.fillna(points * (8 if pd.isna(hours_per_point) else hours_per_point))
+
     def to_training_frame(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Convert a raw JIRA export into the training schema used by POST /train:
@@ -322,18 +335,13 @@ class JiraDataPreprocessor:
         df['Custom field (Story Points)'] = pd.to_numeric(df['Custom field (Story Points)'], errors='coerce')
         df = df.dropna(subset=['Custom field (Story Points)'])
 
-        if 'Sprint' not in df.columns:
-            df['Sprint'] = np.nan
-        df = self.create_time_features(df)
-        median_days = df['Duracion_Sprint'].median()
-        # Two-week sprints when the export has no parseable sprint dates
-        df['Duracion_Sprint'] = df['Duracion_Sprint'].fillna(14 if pd.isna(median_days) else median_days)
-
         if 'Assignee' not in df.columns:
             df['Assignee'] = np.nan
         df = self.create_cost_features(df)
-        df = self.create_effort_features(df)
         df = self.fix_outliers(df)
+        df['Esfuerzo_por_Puntos_Historia'] = self._effort_hours(df)
+        # Ideal working days of the story; the sprint length says nothing about a single story
+        df['Duracion_Sprint'] = df['Esfuerzo_por_Puntos_Historia'] / 8
 
         criteria = df.get('Custom field (Criterios de aceptación)', pd.Series('', index=df.index))
         description = df.get('Description', pd.Series('', index=df.index))
