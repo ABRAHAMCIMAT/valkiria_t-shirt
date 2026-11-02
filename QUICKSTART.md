@@ -39,9 +39,11 @@ Open a third PowerShell window:
 ```powershell
 cd backend
 # Train models using the provided CSV
+# (the raw JIRA export is converted to the training schema automatically)
 python -c "
-from models.epic_estimation_models import create_and_train_models
-models = create_and_train_models('../Jira (3).csv', 'trained_models')
+from pathlib import Path
+from app.main import train_models_from_csv
+train_models_from_csv(Path('../Jira (3).csv'))
 "
 ```
 

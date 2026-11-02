@@ -338,37 +338,3 @@ class EstimationModels:
         self.model_metrics = state.get('model_metrics', {})
 
         print(f"Models loaded from {filepath}")
-
-
-def create_and_train_models(csv_path: str, model_dir: str = "trained_models") -> EstimationModels:
-    """
-    Create and train models from JIRA CSV data.
-
-    Args:
-        csv_path: Path to JIRA CSV file
-        model_dir: Directory to save models
-
-    Returns:
-        Trained EstimationModels instance
-    """
-    # Load data
-    print("Loading JIRA data...")
-    df = pd.read_csv(csv_path, encoding='utf-8')
-
-    # Data cleaning and feature engineering would go here
-    # For now, assuming the notebook preprocessing has been done
-
-    # Create model instance
-    models = EstimationModels(model_dir)
-
-    # Prepare data
-    print("Preparing data...")
-    X, y_dict = models.prepare_data(df)
-
-    # Train models
-    models.train(X, y_dict)
-
-    # Save models
-    models.save()
-
-    return models
