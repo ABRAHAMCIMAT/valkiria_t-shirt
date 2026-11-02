@@ -74,6 +74,16 @@ class TestJiraExportToTrainingFrame:
         assert frame["Titulo"].tolist() == ["Login", "Reporte"]
         assert frame["Historia de Usuario"].tolist() == ["Como usuario quiero entrar", ""]
         assert frame["Custom field (Story Points)"].tolist() == [3, 5]
-        # El sprint sin fechas toma la mediana de los que sí se pudieron leer
-        assert frame["Duracion_Sprint"].tolist() == [21, 21]
+        # Sin 'Original estimate' en el export: un día de trabajo por punto
+        assert frame["Esfuerzo_por_Puntos_Historia"].tolist() == [24, 40]
+        assert frame["Duracion_Sprint"].tolist() == [3, 5]
         assert frame.drop(columns=["Titulo", "Historia de Usuario", "Criterios de Aceptación"]).notna().all().all()
+
+    def test_effort_uses_real_estimates_and_their_hours_per_point(self):
+        export = self._export()
+        export["Original estimate"] = [3 * 4 * 3600, None, None]
+
+        frame = JiraDataPreprocessor().to_training_frame(export)
+
+        # 12 h reales en 3 puntos = 4 h/punto, que se aplican a la historia de 5 puntos sin estimación
+        assert frame["Esfuerzo_por_Puntos_Historia"].tolist() == [12, 20]

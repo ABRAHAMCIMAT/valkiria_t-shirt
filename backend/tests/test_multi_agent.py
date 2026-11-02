@@ -73,3 +73,29 @@ def test_unknown_size_falls_back_to_conservative_option():
 
     assert result["size"] == "M"
     assert result["reason"].startswith("Selección conservadora")
+
+
+def test_options_contradicting_the_platform_count_are_not_offered():
+    question = {**QUESTION, "options": [
+        {"row": 3, "answer": "Conectividad con mas de 3 plataformas", "size": "XL", "annual_cost": 400},
+        {"row": 4, "answer": "Producto con 3 plataformas", "size": "M", "annual_cost": 300},
+        {"row": 5, "answer": "Integración de 1 o 2 plataformas", "size": "S", "annual_cost": 200},
+        {"row": 6, "answer": "Sin integración a plataformas", "size": "XS", "annual_cost": 100},
+        {"row": 7, "answer": "NA", "size": "NA", "annual_cost": 0},
+    ]}
+    epics = [*EPICS, {"name": "BI- Reporte", "description": "Conciliación"}]
+    llm = FakeLLM("M")
+
+    asyncio.run(_estimator(llm)._analyze_questionnaire([question], epics, "M"))
+
+    assert llm.schemas[0]["properties"]["size"]["enum"] == ["NA", "M"]
+
+
+def test_platform_filter_is_skipped_without_identified_platforms_or_matching_options():
+    question = {**QUESTION, "options": [
+        {"row": 3, "answer": "6 o más plataformas", "size": "XL", "annual_cost": 400},
+        {"row": 4, "answer": "NA", "size": "NA", "annual_cost": 0},
+    ]}
+
+    assert MultiAgentEstimator._without_contradicted_options(question, 0) is question
+    assert MultiAgentEstimator._without_contradicted_options(question, 3) is question
